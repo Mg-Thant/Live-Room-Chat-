@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ChatBubbleLeftRightIcon,
   PaperAirplaneIcon,
@@ -6,14 +6,80 @@ import {
   UserIcon,
 } from "@heroicons/react/24/solid";
 import { ArrowRightOnRectangleIcon } from "@heroicons/react/20/solid";
+import { formatDistanceToNow } from "date-fns";
+import { useNavigate } from "react-router-dom";
 
-const Room = ({ username, room }) => {
-  const [roomUser, setRoomUser] = useState(["user1", "user2", "user3"]);
-  const [receivedMessages, setReceivedMessages] = useState([
-    "Hello",
-    "how are you",
-    "i hope you are well",
-  ]);
+const Room = ({ username, room, socket }) => {
+  const [roomUser, setRoomUser] = useState([]);
+  const [receivedMessages, setReceivedMessages] = useState([]);
+  const [message, setMessage] = useState("");
+  const navigate = useNavigate();
+
+  const boxDivRef = useRef(null);
+
+  const getOldMessages = async () => {
+    const res = await fetch(`${import.meta.env.VITE_SERVER}/chat/${room}`);
+    if(res.status === 403) {
+      return navigate("/");
+    } 
+    const data = await res.json();
+    setReceivedMessages((prevMessage) => [...prevMessage, ...data])
+  }
+
+  useEffect(() => {
+    getOldMessages();
+  }, [])
+
+  useEffect(() => {
+    // send joined user info
+    socket.emit("joined_room", { username, room });
+
+    // get welcome message
+    socket.on("message", (data) => {
+      setReceivedMessages((prevMsg) => [...prevMsg, data]);
+    });
+
+    // get room users
+    socket.on("room_users", (data) => {
+      let prevRoomUsers = [...roomUser];
+      data.forEach((user) => {
+        const index = prevRoomUsers.findIndex(
+          (prevUser) => prevUser.id === user.id
+        );
+        if (index !== -1) {
+          // Merge same user
+          prevRoomUsers[index] = { ...prevRoomUsers[index], ...user };
+        } else {
+          prevRoomUsers.push(user);
+        }
+      });
+      // setRoomUser(() => [...data]);
+      setRoomUser(prevRoomUsers); 
+    });
+
+    return () => {
+      console.log("Unmount successfully");
+      socket.disconnect();
+    };
+  }, [socket]);
+
+  const sendMessage = () => {
+    if (message.trim().length > 0) {
+      socket.emit("send_message", message);
+      setMessage(" ");
+    }
+  };
+
+  const leaveRoom = () => {
+    navigate("/");
+  };
+
+  useEffect(() => {
+    if(boxDivRef.current) {
+      boxDivRef.current.scrollTop = boxDivRef.current.scrollHeight;
+    }
+  }, [receivedMessages])
+
   return (
     <section className="flex gap-4">
       <div className="w-1/3 bg-blue-600 h-screen text-white font-medium relative">
@@ -35,42 +101,52 @@ const Room = ({ username, room }) => {
           {roomUser.map((user, i) => (
             <p key={i} className="flex items-end gap-2 text-sm my-2">
               <UserIcon width={26} height={26} />
-              {user}
+              {user.username === username ? "You" : user.username}
             </p>
           ))}
         </div>
         <button
           type="button"
           className="absolute bottom-0 p-2.5 flex items-center gap-1 w-full mx-2 mb-2 text-lg"
+          onClick={leaveRoom}
         >
           <ArrowRightOnRectangleIcon width={30} height={30} />
           Leave Room
         </button>
       </div>
       <div className="w-full pt-5 relative">
-        <div className="h-[30rem] overflow-y-auto">
+        <div className="h-[30rem] overflow-y-auto" ref={boxDivRef}>
           {receivedMessages.map((msg, i) => {
             return (
               <div
                 key={i}
                 className="text-white bg-blue-600 px-3 py-2 m-3 w-3/4 rounded-[20px] rounded-bl-none"
               >
-                <p className="text-sm font-medium font-mono">From Bot</p>
-                <p className="text-lg font-medium">{msg}</p>
+                <p className="text-sm font-medium font-mono">
+                  From {msg.username}
+                </p>
+                <p className="text-lg font-medium">{msg.message}</p>
                 <p className="text-sm font-mono font-medium text-right">
-                  Less than a minute
+                  {formatDistanceToNow(new Date(msg.sent_at))}
                 </p>
               </div>
             );
           })}
         </div>
         <div className="absolute bottom-0 my-2 py-2.5 flex items-end w-full px-2">
-          <input type="text" placeholder="Message..." className="w-full outline-none border-b border-b-blue-600 text-lg me-2" />
+          <input
+            type="text"
+            placeholder="Message..."
+            className="w-full outline-none border-b border-b-blue-600 text-lg me-2"
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+          />
           <button type="button" className="hover:-rotate-45 duration-200">
             <PaperAirplaneIcon
               width={30}
               height={30}
               className="text-blue-600"
+              onClick={sendMessage}
             />
           </button>
         </div>

@@ -2,8 +2,9 @@ import React from "react";
 import { useNavigate } from "react-router-dom";
 import { ToastContainer, toast, Flip } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import io from "socket.io-client";
 
-const Welcome = ({ username, setUsername, room, setRoom }) => {
+const Welcome = ({ username, setUsername, room, setRoom, setSocket }) => {
   const navigate = useNavigate();
   const joinRoom = (e) => {
     e.preventDefault();
@@ -12,6 +13,8 @@ const Welcome = ({ username, setUsername, room, setRoom }) => {
       room !== "select-room" &&
       room.trim().length > 0
     ) {
+      const socket = io.connect("http://localhost:4000");
+      setSocket(socket);
       navigate("/chat", { replace: true });
     } else {
       toast.error("Fill all info!", {
